@@ -1,0 +1,5 @@
+docker stop ArkLogs
+docker rm ArkLogs
+docker build -t al .
+docker run -d --name ArkLogs al
+docker logs -f ArkLogs
