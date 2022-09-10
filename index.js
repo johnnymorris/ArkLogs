@@ -5,7 +5,7 @@ const { Routes } = require('discord-api-types/v9');
 const { clientId, guildId, token } = require('./config.json');
 const { createConnection } = require('mysql');		//SQL requirement
 const config = require('./config.json');			//SQL requirement
-const request = require('request');					//Nitrado requirement
+const request = require('request');					//HTTP & Nitrado requirement
 
 const client = new Client({ intents: [Intents.FLAGS.GUILDS] });
 
@@ -248,6 +248,7 @@ async function getUserFromLinkCode(linkCode){
 		})
 	});
 }
+
 async function sql_get_server_list(){
 	return new Promise(resolve => {
 		let response;
@@ -266,6 +267,7 @@ async function sql_get_server_list(){
 		})
 	});
 }
+
 async function get_last_log_line(service_id){
 	return new Promise(resolve => {
 		let response;
@@ -290,6 +292,23 @@ async function get_last_log_line(service_id){
 		})
 	});
 }
+
+async function monitorCheckIn(){
+	//Start function
+	const o_gameservers = {
+		url: 'http://192.168.0.6:3001/api/push/LleWCEaNr3?status=up&msg=OK&ping='
+	};
+	
+	async function c_gameservers(e_gameservers, r_gameservers, b_gameservers) {
+		if (!e_gameservers && r_gameservers.statusCode == 200) {
+			var myTimeStamp = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '')
+			console.log(myTimeStamp + " - Checked in to UptimeKuma at 192.168.0.6");
+		}
+	}
+	request(o_gameservers,c_gameservers);
+	//End function
+}
+
 async function nitrado_get_service(user_id,access_token){
 	return new Promise(resolve => {
 		const o_services = {
@@ -325,8 +344,6 @@ async function nitrado_get_service(user_id,access_token){
 	});
 }
 
-
-
 async function parse_log(obj){
 	let access_token=obj['linkage'];
 	let guildlink=await client.guilds.cache.get(obj['guildlink']);
@@ -350,7 +367,7 @@ async function parse_log(obj){
 		});
 	}
 	
-//Now we have all the data we need in a SQL command we can query for a fresh token to download the log file and then read it.
+	//Now we have all the data we need in a SQL command we can query for a fresh token to download the log file and then read it.
 	const o_lloc = {
 		url: "https://api.nitrado.net/services/"+obj['serverinfo']['service_id']+"/gameservers/file_server/download?file=%2Fgames%2F"+obj['serverinfo']['username']+"%2Fnoftp%2Farkps%2FShooterGame%2FSaved%2FLogs%2FShooterGame.log&offset=0&length=4048",
 		headers: {
@@ -398,19 +415,6 @@ async function parse_log(obj){
 			});
 		}
 		
-		
-		//Create commands Logs Channel if does not exist
-		let bb_unregisteredtribe_channel=bb_category_channel+"no_tribe";
-		let bb_unregisteredtribe = await parent.children.find((channel) => channel.name === bb_unregisteredtribe_channel,);
-		if (!bb_unregisteredtribe) {
-			bb_unregisteredtribe = await guildlink.channels.create(bb_unregisteredtribe_channel, { parent, permissionOverwrites: [
-					{id: guildlink.id,deny: ['VIEW_CHANNEL'],},
-					{id: client.user,allow: ['VIEW_CHANNEL','MANAGE_CHANNELS'],},
-					{id: role_admin,allow: ['VIEW_CHANNEL','MANAGE_CHANNELS'],},
-				],
-			});
-		}
-		
 		//Create Chat Logs If does not exist
 		let bb_chat_channel=bb_category_channel+"chat";
 		let bb_global = await parent.children.find((channel) => channel.name === bb_chat_channel,
@@ -446,21 +450,25 @@ async function parse_log(obj){
 						bb_command.send('```fix\n/'+full_logs[i].substr(full_logs[i].search(": ")+2)+'```');
 					} if(full_logs[i].includes("duped item")){
 						bb_admin.send('```fix\n/'+full_logs[i].substr(full_logs[i].search(": ")+2)+'```');
-					} if(full_logs[i].includes(" of Tribe ")){
-						bb_unregisteredtribe.send(full_logs[i].substr(full_logs[i].search(": ")+2));
 					} else if(full_logs[i].includes(": Tribe  Tamed")){
 						//Do nothing
 					} else if(full_logs[i].includes(": Tribe")){
 							let start=full_logs[i].search("Tribe ")
 							let tribe_name=full_logs[i].substring(start+6,full_logs[i].search(",",start));
 							let role_tribeName='bb_'+tribe_name.toLowerCase()
+							let tribe_color="#0080FF";
+							if(tribe_name.includes("pve")){
+								tribe_color="#00FF00";
+							} else {
+								tribe_color="#00ffff";
+							}
 							
 							//Check if Tribe Role Exists if not create it.
 							let role_tribe = await guildlink.roles.cache.find((role) => role.name === role_tribeName,);
 							if (!role_tribe) {
 								let role_tribe = await guildlink.roles.create({
 								  name: role_tribeName,
-								  color: '#0080FF',
+								  color: tribe_color,
 								  reason: 'Used to grant access to the tribe logs'
 								});
 							}
@@ -492,11 +500,14 @@ async function parse_log(obj){
 									let user_id=await getUserFromLinkCode(linkCode);
 									if(!isNaN(user_id)){
 										let member = await guildlink.members.fetch(user_id);
+										console.log(member);
+										//Assign Tribe Role
 										member.roles.add(role_tribe);
-										console.log(member.username +" was given tribe role "+role.name);
+										console.log(member.user.username +" was given tribe role "+role_tribe.name);
+										//Assign Registered Role
 										let registered_role = await guildlink.roles.cache.find((role) => role.name === "Registered",);
 										member.roles.add(registered_role);
-										console.log(member.username +" was given tribe role Registered");
+										console.log(member.user.username +" was given tribe role Registered");
 									} else {
 										//console.log("result was false, probably already claimed");
 									}
@@ -526,12 +537,9 @@ async function parse_log(obj){
 						let current_line_log=full_logs[i].substr(full_logs[i].search(": ")+2).replace('</>','').replace('<RichColor Color="0, 1, 0, 1">','').replace('<RichColor Color="1, 1, 0, 1">','').replace('<RichColor Color="0, 1, 1, 1">','').replace('<RichColor Color="1, 0, 0, 1">','').replace('<RichColor Color="1, 0.75, 0.3, 1">','').replace('<RichColor Color="1, 0, 1, 1">','').replace('<RichColor Color="0.45, 0.85, 0.55, 1">','');
 
 						var endCharacter = current_line_log.indexOf("!");
-						let pveOrPvp='FF0000';
 						var substring=current_line_log.substring(0,endCharacter);
-						if(substring.indexOf(") (")==-1) //It was PVP
-							pveOrPvp='FF0000';
-						else	//at least 1 dino was involved !
-							pveOrPvp='FFA500';
+						//GET KILL
+						kill_info=await get_kill_details(substring);
 						var substring2=substring.replaceAll("()","").split('was killed by');
 						
 					//Check if this bot has previously added a message.
@@ -539,9 +547,9 @@ async function parse_log(obj){
 						
 						//Create embed item				
 						const ssembed = new MessageEmbed()
-							.setColor(pveOrPvp)
+							.setColor(kill_info['color'])
 							.setURL('')
-							.setTitle('pwned')
+							.setTitle(kill_info['title'])
 							.setDescription('\n**Killed:**'+substring2[0].trim()+'\n**Killer:**'+substring2[1].trim()+'\n')
 							//.setAuthor('Beer', '', '')
 							.setTimestamp(Date.now())
@@ -584,10 +592,38 @@ async function update_log_line(i,service_id){
 	});//Remove this one outside the for loop
 }
 
+
+async function get_kill_details(kill_log){
+	return new Promise (resolve => {
+		var myTimeStamp = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '')
+		console.log(myTimeStamp + ' - '+ kill_log);
+		if(kill_log.indexOf("()")==-1){ //It was PVE'd
+			if(kill_log.indexOf(") (")==-1){
+				var pveOrPvp='FF0000';
+				var kill_title="pwned by pure skill of the killer or lack off";
+			} else {
+				var pveOrPvp='FFA500';
+				var kill_title="pwned, but a tame was involved";
+			}
+		}else{	//It was PVE
+			var pveOrPvp='7CFC00';
+			var kill_title="Yikes, a PVE kill, this is embarrassing";
+		}
+
+		var kill_details = {
+			color: pveOrPvp,
+			title: kill_title
+	   };
+
+
+		resolve(kill_details);
+	});
+}
+
 async function get_logs(){
-
-
-
+	
+	//Trigger status check (to show system still working)
+	monitorCheckIn();
 
 	let sql_server_list = await sql_get_server_list();
 	
