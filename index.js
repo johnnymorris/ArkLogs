@@ -494,6 +494,8 @@ async function parse_log(obj){
 								
 								//linkCode Check
 								if(full_logs[i].includes("froze ")){
+									await check_stats(full_logs[i],role_tribeName);
+								
 									let linkCodeStart=full_logs[i].search("froze");
 									let linkCodeEnd=full_logs[i].indexOf(" ",linkCodeStart+7);
 									let linkCode=full_logs[i].substring(linkCodeStart+6,linkCodeEnd);
@@ -518,7 +520,10 @@ async function parse_log(obj){
 								
 								//Parse Tribe Log
 								if(full_logs[i].includes("destroyed your 'Tek") || full_logs[i].includes("destroyed your 'Large Tek")){
-									bb_tribe.send('```diff\n- <@&'+role_tribe+'> '+current_line_log+'\n```');
+									bb_tribe.send('<@&'+role_tribe+'> '+current_line_log);
+									//
+									//bb_tribe.send('```diff\n- <@&'+role_tribe+'> '+current_line_log+'\n```');
+									//bb_tribe.send('<@&'+role_tribe+'>');
 								}else if(full_logs[i].includes("killed")){
 									bb_tribe.send('```diff\n-'+current_line_log+'\n```');
 								} else if(full_logs[i].includes("Tame")){
@@ -542,20 +547,48 @@ async function parse_log(obj){
 						kill_info=await get_kill_details(substring);
 						var substring2=substring.replaceAll("()","").split('was killed by');
 						
-					//Check if this bot has previously added a message.
-						let kill_log = await guildlink.channels.cache.find(c => c.name.includes("kill_log")) ;
-						
-						//Create embed item				
-						const ssembed = new MessageEmbed()
-							.setColor(kill_info['color'])
-							.setURL('')
-							.setTitle(kill_info['title'])
-							.setDescription('\n**Killed:**'+substring2[0].trim()+'\n**Killer:**'+substring2[1].trim()+'\n')
-							//.setAuthor('Beer', '', '')
-							.setTimestamp(Date.now())
-							.setFooter({text:'Nitrado KillBot by BeerBot'});
+						if(kill_info['title']!="Yikes, a PVE kill, this is embarrassing")
+						{
+							//console.log("0."+substring2[0]);
+							//console.log("1."+substring2[1]);
+							//First Tribe Name
+							var killed=[];
+							killed['s']=substring2[0].lastIndexOf("(")+1;
+							killed['e']=substring2[0].lastIndexOf(")");
+							var tribe_killed=substring2[0].substr(killed['s'],(killed['e']-killed['s']));
+
+							//Killer Tribe Name
+							var killer=[];
+							killer['s']=substring2[1].lastIndexOf("(")+1;
+							killer['e']=substring2[1].lastIndexOf(")");
+							var tribe_killer=substring2[1].substr(killer['s'],(killer['e']-killer['s']));
 							
-							kill_log.send({embeds: [ssembed]});
+							console.log(tribe_killer+' Killed '+tribe_killed);
+
+							if(tribe_killer.trim()!=tribe_killed.trim()){
+								console.log("Different Tribe Killed a tame");
+							
+							//Check if this bot has previously added a message.
+								let kill_log = await guildlink.channels.cache.find(c => c.name.includes("kill_log")) ;
+							
+
+								//Create embed item				
+								const ssembed = new MessageEmbed()
+									.setColor(kill_info['color'])
+									.setURL('')
+									.setTitle(kill_info['title'])
+									.setDescription('\n**Killed:**'+substring2[0].trim()+'\n**Killer:**'+substring2[1].trim()+'\n')
+									//.setAuthor('Beer', '', '')
+									.setTimestamp(Date.now())
+									.setFooter({text:'Nitrado KillBot by BeerBot'});
+									
+									kill_log.send({embeds: [ssembed]});
+							}else{
+								//console.log("Removing internal tribe kill");
+							}
+						} else{
+							//console.log("Removing PVE kill");
+						}
 						
 					} else {
 						//Extra 
@@ -592,6 +625,72 @@ async function update_log_line(i,service_id){
 	});//Remove this one outside the for loop
 }
 
+async function fix_stats(stat){
+	return new Promise (resolve => {
+		if(stat==null)
+			resolve("-1");
+		if(stat[0].substring(0, stat[0].length - 1)>255){
+			resolve(stat[0].substring(0, stat[0].length - 1));
+		} else {
+			resolve(stat[0].substring(0, stat[0].length - 1));
+		}
+		
+	});
+}
+
+async function check_stats(log,role_tribe){
+	
+	var dino_name=log.substring(log.lastIndexOf("(")+1,log.lastIndexOf(")",log.length-3));
+	
+	var stat_h=await fix_stats(log.match(/[0-9]{1,7}h/));
+	var stat_s=await fix_stats(log.match(/[0-9]{1,7}s/));
+	var stat_o=await fix_stats(log.match(/[0-9]{1,7}o/));
+	var stat_f=await fix_stats(log.match(/[0-9]{1,7}f/));
+	var stat_w=await fix_stats(log.match(/[0-9]{1,7}w/));
+	var stat_m=await fix_stats(log.match(/[0-9]{1,7}m/));
+	
+	//Check if existing dino exists.
+	let con = createConnection(config.mysql);
+	con.on('error', function() {console.log('sql database connection timed out');});			
+	con.connect(err => {
+		if (err) return console.log(err);
+		con.query('SELECT * FROM dino_stats WHERE dino="'+dino_name+'" AND tribe="'+role_tribe+'"', async (server_list_token, pulled_dino) => {
+			if(pulled_dino.length>0){
+				if(stat_h>pulled_dino[0]['health']||stat_h==0)
+					con.query('UPDATE dino_stats SET health="'+stat_h+'" WHERE dino="'+dino_name+'" AND tribe="'+role_tribe+'"', async (server_list_token, pulled_dino) => {});
+				if(stat_s>pulled_dino[0]['stamina']||stat_s==0)
+					con.query('UPDATE dino_stats SET stamina="'+stat_s+'" WHERE dino="'+dino_name+'" AND tribe="'+role_tribe+'"', async (server_list_token, pulled_dino) => {});
+				if(stat_f>pulled_dino[0]['food']||stat_f==0)
+					con.query('UPDATE dino_stats SET food="'+stat_f+'" WHERE dino="'+dino_name+'" AND tribe="'+role_tribe+'"', async (server_list_token, pulled_dino) => {});
+				if(stat_o>pulled_dino[0]['oxygen']||stat_o==0)
+					con.query('UPDATE dino_stats SET oxygen="'+stat_o+'" WHERE dino="'+dino_name+'" AND tribe="'+role_tribe+'"', async (server_list_token, pulled_dino) => {});
+				if(stat_w>pulled_dino[0]['weight']||stat_w==0)
+					con.query('UPDATE dino_stats SET weight="'+stat_w+'" WHERE dino="'+dino_name+'" AND tribe="'+role_tribe+'"', async (server_list_token, pulled_dino) => {});
+				if(stat_m>pulled_dino[0]['melee']||stat_m==0)
+					con.query('UPDATE dino_stats SET melee="'+stat_m+'" WHERE dino="'+dino_name+'" AND tribe="'+role_tribe+'"', async (server_list_token, pulled_dino) => {});
+			} else {
+				if(stat_h==-1)
+					stat_h==0;
+				if(stat_s==-1)
+					stat_s==-0;
+				if(stat_o==1)
+					stat_o==-0;
+				if(stat_f==1)
+					stat_f==-0;
+				if(stat_w==1)
+					stat_w==-0;
+				if(stat_m==1)
+					stat_m==-0;
+				con.query('INSERT INTO dino_stats(dino,tribe,health,stamina,oxygen,food,weight,melee) VALUES ("'+dino_name+'","'+role_tribe+'","'+stat_h+'","'+stat_s+'","'+stat_o+'","'+stat_f+'","'+stat_w+'","'+stat_m+'")', async (server_list_token, list_of_servers) => {
+					console.log(role_tribe+' aquired new '+dino_name+' stats');
+				});
+			}
+			con.end(function(err) {
+				// The connection is terminated now
+			});
+		});
+	})
+}
 
 async function get_kill_details(kill_log){
 	return new Promise (resolve => {
