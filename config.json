@@ -1,0 +1,14 @@
+{
+	
+    "token": "*revoked*",
+	"clientId": "*revoked*",
+	"guildId": "*revoked*",
+    "client": {
+    },
+    "mysql": {
+        "host": "*revoked*",
+        "user": "*revoked*",
+        "password": "*revoked*",
+        "database": "*revoked*"
+    }
+}
